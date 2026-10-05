@@ -634,3 +634,29 @@ async def test_provider_account_errors_not_sent_after_privacy_change(world):
     world.engine.turn.side_effect = generate
     await world.cog.on_message(message(world))
     world.channel.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_consumed_paid_image_controls_visibly_disabled(world):
+    view = ImageApproval(world.cog, world.owner.id, "Moon", "test/image")
+    interaction = world.interaction()
+    await view.approve.callback(interaction)
+    assert view.is_finished() and all(item.disabled for item in view.children)
+    assert interaction.response.edit_message.await_args.kwargs["view"] is view
+    world.engine.image.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_consumed_archive_and_delete_controls_visibly_disabled(world):
+    entry = world.store.add_entry(world.session["id"], world.owner.id, "item", "Lantern", "Glowing")
+    deletion = DeleteEntryView(world.cog, world.owner.id, world.session["id"], entry)
+    interaction = world.interaction()
+    await deletion.cancel.callback(interaction)
+    assert deletion.is_finished() and all(item.disabled for item in deletion.children)
+    assert interaction.response.edit_message.await_args.kwargs["view"] is deletion
+    dashboard = Dashboard(world.cog, world.owner.id, world.session["id"])
+    dashboard.embed(world.session)
+    interaction = world.interaction()
+    await dashboard.archive.callback(interaction)
+    assert dashboard.is_finished() and all(item.disabled for item in dashboard.children)
+    assert interaction.response.edit_message.await_args.kwargs["view"] is dashboard

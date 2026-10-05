@@ -157,6 +157,24 @@ class OwnerView(discord.ui.View):
         except (discord.NotFound, discord.Forbidden):
             self.stop()
 
+    async def finish(self, interaction: discord.Interaction) -> bool:
+        """Consume a one-shot panel and visibly disable its original controls."""
+        self.stop()
+        for item in self.children:
+            if hasattr(item, "disabled"):
+                item.disabled = True
+        if interaction.is_expired():
+            return False
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.edit_message(view=self, allowed_mentions=NO_MENTIONS)
+            else:
+                await interaction.edit_original_response(view=self, allowed_mentions=NO_MENTIONS)
+            return True
+        except discord.HTTPException:
+            # Do not spend or mutate if we cannot acknowledge the click.
+            return False
+
     async def on_timeout(self) -> None:
         for item in self.children:
             if hasattr(item, "disabled"):
@@ -410,6 +428,8 @@ class Dashboard(OwnerView):
                 return
             # Capture desired state before yielding. Repeated clicks cannot undo it.
             desired = self.target_archived
+            if not await self.finish(interaction):
+                return
             await self.cog.change_archive(interaction, self.session_id, desired)
             self.stop()
         finally:
@@ -475,8 +495,7 @@ class DeleteEntryView(OwnerView):
             await private(interaction, "This deletion has already been handled.")
             return
         self.used = True
-        self.stop()
-        if not await deferred(interaction):
+        if not await self.finish(interaction):
             return
         async with self.cog.session_lock(self.session_id):
             session = self.cog.owned_session(self.session_id, self.owner_id)
@@ -496,7 +515,8 @@ class DeleteEntryView(OwnerView):
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if await self.authorize(interaction):
             self.used = True
-            self.stop()
+            if not await self.finish(interaction):
+                return
             await private(interaction, "Kept. Nothing changed.")
 
 
@@ -615,8 +635,7 @@ class ImageApproval(OwnerView):
             return
         # Set before the first await: rapid double clicks never issue duplicate calls.
         self.used = True
-        self.stop()
-        if not await deferred(interaction):
+        if not await self.finish(interaction):
             return
         settings = self.cog.store.get_settings(self.owner_id) or {}
         if not settings.get("api_key"):
@@ -654,7 +673,8 @@ class ImageApproval(OwnerView):
     async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         if await self.authorize(interaction):
             self.used = True
-            self.stop()
+            if not await self.finish(interaction):
+                return
             await private(interaction, "Cancelled. No image request was sent.")
 
 
